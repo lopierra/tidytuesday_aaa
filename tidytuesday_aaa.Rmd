@@ -1,0 +1,256 @@
+---
+title: 'BioData Club/Tidy Tuesday: African American Accomplishments'
+author: "Pierrette Lo"
+date: "10/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggiraph)
+library(ggbump)
+library(PNWColors)
+library(tidytext)
+library(igraph)
+library(networkD3)
+```
+
+Read in data
+
+```{r}
+firsts <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-09/firsts.csv')
+
+science <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-09/science.csv')
+```
+
+```{r}
+skimr::skim(firsts)
+```
+
+
+## Firsts since 2000 
+
+(kind of cheating a little - chose a small enough dataset that I could visually inspect for problems/patterns)
+
+```{r}
+firsts_2000 <- firsts %>%
+  filter(year >= 2000) %>% 
+  mutate(category = as.factor(category)) %>%  
+  #complete(year, category) %>% 
+  group_by(year, category) %>% 
+  mutate(id = row_number(person)) %>% 
+  select(year, category, id, everything()) %>% 
+  ungroup()
+
+# category has 8 levels
+levels(firsts_2000$category)
+
+```
+
+
+Data cleanup:
+- remove "(See also" and "[*]" in `person`
+- replace "First African-American" in `accomplishment` to "..."
+- add tooltip column for ggiraph (use `htmlEscape` to sanitize text for use as attribute, see ref: https://github.com/davidgohel/ggiraph/issues/5)
+
+The `gender` column is ambiguous - there are many obviously female `person`s who don't have "female" in `gender`. The data dictionary also isn't clear - it says "Gender - indicates either female AND African-American, or a more general African-American first". For this exercise, I'm going to assume that this means "first African-American AND first woman of any race".
+
+```{r}
+firsts_2000_clean <- firsts_2000 %>% 
+  mutate(person = str_replace(person, "\\(See also", "")) %>% 
+  mutate(person = str_replace_all(person, "\\[.*\\]", ""),
+         accomplishment = str_replace(accomplishment, "First African-American", "...")) %>% 
+  mutate(tooltip = htmltools::htmlEscape(paste0(accomplishment, ":\n", person), TRUE))
+```
+
+Static Plot
+
+```{r, fig.height=8, fig.width=8}
+firsts_2000_clean %>% 
+  ggplot(aes(x = year, y = id, fill = gender)) +
+  geom_point(size = 3,
+             shape = 21,
+             color = "grey15") +
+  facet_wrap(~category, nrow = 8) +
+  xlab(NULL) +
+  ylab(NULL) +
+  scale_fill_manual(values = c("#1380A1", "#FAAB18"),
+                     name = NULL,
+                       labels = c("First AA", "First AA & first woman of any race")) +
+  xlim(1999, 2021) +
+  ylim(0, 5.5) +
+  theme_dark() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_line(color = "grey10"),
+        axis.text.x = element_text(color = "grey10"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_line(color = "#cbcbcb",
+                                          linetype = "dotted"),
+        panel.grid.minor.x = element_line(color = "#cbcbcb",
+                                          linetype = "dotted"),
+        legend.position = "top",
+        legend.justification = "left",
+        legend.background = element_rect(fill = "grey50"),
+        plot.background = element_rect(fill = "grey50")) +
+  ggtitle("2000-2019: The First African-American...")
+```
+
+Interactive plot:
+
+```{r}
+p <- firsts_2000_clean %>% 
+  ggplot(aes(x = year, y = id, fill = gender)) +
+  geom_point_interactive(aes(tooltip = tooltip, data_id = tooltip),
+                         size = 3, shape = 21, color = "grey15") +
+  facet_wrap(~category, nrow = 8) +
+  xlab(NULL) +
+  ylab(NULL) +
+  scale_fill_manual(values = c("#1380A1", "#FAAB18"),
+                     name = NULL,
+                       labels = c("First AA", "First AA & first woman of any race")) +
+  xlim(1999, 2021) +
+  ylim(0, 5.5) +
+  theme_dark() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_line(color = "grey10"),
+        axis.text.x = element_text(color = "grey10"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_line(color = "#cbcbcb",
+                                          linetype = "dotted"),
+        panel.grid.minor.x = element_line(color = "#cbcbcb",
+                                          linetype = "dotted"),
+        legend.position = "top",
+        legend.justification = "left",
+        legend.background = element_rect(fill = "grey50"),
+        plot.background = element_rect(fill = "grey50")) +
+  ggtitle("2000-2019: The First African-American...")
+
+girafe(code = print(p),
+       options = list(opts_hover(css = "stroke:darkorange;"),
+                      opts_hover_inv(css = "opacity:0.5;"),
+                      opts_tooltip(opacity = 0.5),
+                      opts_sizing(rescale = TRUE, width = 0.7))
+)
+```
+
+## Bump plot - number of firsts per category over the years
+
+
+```{r}
+bump_plot_data <- firsts %>% 
+  mutate(century = year - year %% 100) %>% 
+  group_by(century, category) %>% 
+  summarize(n_firsts = n()) %>% 
+  group_by(century) %>% 
+  mutate(rank = rank(-n_firsts, ties.method = "random")) %>% 
+  ungroup()
+```
+
+
+```{r}
+bump_plot_data %>% 
+  ggplot(aes(x = century, y = rank, color = category)) +
+  geom_bump(size = 1) +
+  geom_point(size = 4) +
+  geom_text(data = bump_plot_data %>% filter(century == min(century)),
+            aes(x = century - 10, label = category),
+            hjust = 1) +
+  geom_text(data = bump_plot_data %>% filter(century == max(century)),
+            aes(x = century + 10, label = category),
+            hjust = 0) +
+  scale_y_reverse() +
+  scale_x_continuous(limits = c(1600, 2100),
+                     breaks = c(1700, 1800, 1900, 2000)) +
+  scale_color_manual(values = pnw_palette("Bay", 8)) +
+    labs(title = "African-American accomplishments, ranked by number of firsts per category",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        plot.background = element_rect(fill = "black"),
+        panel.grid = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(color = "white"),
+        plot.title = element_text(color = "white", hjust = 0.5))
+
+ggsave("aaa_bump_plot.png", width = 7, height = 5)
+```
+
+## Network of occupations
+
+```{r}
+sci_tokens <- science %>%
+  select(name, occupation_s) %>%
+  # replace "and" with ";" + delete asides + replace weird entries
+  mutate(occupation_s = str_replace(occupation_s, "and", ";"),
+         occupation_s = str_replace(occupation_s, "\\[.*\\]", ""),
+         occupation_s = str_replace(occupation_s, "\\(.*\\)", ""),
+         occupation_s = str_replace(occupation_s, "Woods Hole Marine Biology Institute biologist", "biologist"),
+         occupation_s = str_replace(occupation_s, "ZoologistexplorerAnthropologist", "zoologist; explorer; anthropologist")) %>% 
+  unnest_tokens(job, occupation_s, token = "regex", pattern = ";", drop = FALSE) %>% 
+  filter(job != " ") %>% 
+  arrange(job)
+```
+
+How many unique occupations?
+```{r}
+n_distinct(sci_tokens$job)
+```
+
+
+Next: make igraph and format for networkD3 use
+
+```{r}
+sci_simple <- sci_tokens %>%
+  left_join(sci_tokens, by = c("name", "occupation_s")) %>% 
+  filter(job.x < job.y) %>% 
+  group_by(job.x, job.y) %>% 
+  summarize(weight = n()) %>% 
+  ungroup() 
+  
+simpleNetwork(sci_simple)
+```
+
+
+```{r}
+
+sci_igraph <- sci_simple %>%
+  graph_from_data_frame(directed = FALSE)
+
+# find community structure using short random walks
+wc <- cluster_walktrap(sci_igraph)
+members <- membership(wc)
+
+sci_d3 <- igraph_to_networkD3(sci_igraph, group = members)
+
+forceNetwork(Links = sci_d3$links,
+             Nodes = sci_d3$nodes,
+             Source = "source",
+             Target = "target",
+             NodeID = "name",
+             Group = "group",
+             opacity = 0.8,
+             opacityNoHover = 0.8,
+             bounded = TRUE,
+             fontSize = 12,
+             charge = -40)
+```
+
+Problem - multiple clusters involving "inventor" because it can be in job.x or job.y -> need to figure out how to make order not matter
+
+Try next:
+- flipbook!
+- animation - number of accomplishments by category, per year - racing bar chart
+- wordcloud
+- annotate timeline with historic milestones/bands of time for wars, etc.
+- use {forcats} to collapse categories e.g. for occupations
+- pull pictures from wikipedia
+- ggbump top 5 occupations/categories
+- network graph of occupations that are related
+

@@ -1,0 +1,104 @@
+---
+title: 'BioData Club/Tidy Tuesday: African American Achievements'
+author: "Pierrette Lo"
+date: "10/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggbump)
+library(ggiraph)
+library(PNWColors)
+```
+
+## Read in data
+
+```{r}
+firsts <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-09/firsts.csv')
+```
+
+## Bump plot - number of firsts per category over the years
+
+```{r}
+bump_data <- firsts %>% 
+  mutate(century = year - year %% 100) %>% 
+  group_by(century, category) %>% 
+  summarize(n_firsts = n()) %>% 
+  group_by(century) %>% 
+  mutate(rank = rank(-n_firsts, ties.method = "random")) %>% 
+  ungroup()
+```
+
+```{r}
+bump_data %>% 
+  ggplot(aes(x = century, y = rank, color = category)) +
+  geom_bump(size = 1) +
+  geom_point(size = 4) +
+  geom_text(data = bump_data %>% filter(century == min(century)),
+            aes(x = century - 10, label = category),
+            hjust = 1) +
+  geom_text(data = bump_data %>% filter(century == max(century)),
+            aes(x = century + 10, label = category),
+            hjust = 0) +
+  scale_y_reverse() +
+  scale_x_continuous(limits = c(1600, 2100),
+                     breaks = c(1700, 1800, 1900, 2000)) +
+  scale_color_manual(values = pnw_palette("Bay", 8)) +
+  labs(title = "African-American Achievements:",
+       subtitle = "Categories ranked by numbers of firsts",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        plot.background = element_rect(fill = "black"),
+        panel.grid = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(color = "white"),
+        plot.title = element_text(color = "white", hjust = 0.5),
+        plot.subtitle = element_text(color = "white", hjust = 0.5))
+
+ggsave("aaa_bump_plot.png", width = 7, height = 5)
+```
+
+Add interactivity:
+
+```{r}
+bp <- bump_data %>% 
+  ggplot(aes(x = century, y = rank, color = category)) +
+  geom_bump(size = 1) +
+  geom_point_interactive(aes(tooltip = n_firsts), size = 4) +
+  geom_text(data = bump_data %>% filter(century == min(century)),
+            aes(x = century - 10, label = category),
+            hjust = 1) +
+  geom_text(data = bump_data %>% filter(century == max(century)),
+            aes(x = century + 10, label = category),
+            hjust = 0) +
+  scale_y_reverse() +
+  scale_x_continuous(limits = c(1600, 2100),
+                     breaks = c(1700, 1800, 1900, 2000)) +
+  scale_color_manual(values = pnw_palette("Bay", 8)) +
+  labs(title = "African-American Achievements:",
+       subtitle = "Categories ranked by numbers of firsts",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        plot.background = element_rect(fill = "black"),
+        panel.grid = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(color = "white"),
+        plot.title = element_text(color = "white", hjust = 0.5),
+        plot.subtitle = element_text(color = "white", hjust = 0.5))
+
+girafe(code = print(bp),
+       options = list(opts_hover(css = "stroke:white;")),
+       #                opts_hover_inv(css = "opacity:0.5;"),
+       #                opts_tooltip(opacity = 0.5),
+                      # opts_sizing(rescale = TRUE, width = 0.7)),
+        width_svg = 8
+)
+```
+
